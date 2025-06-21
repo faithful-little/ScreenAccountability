@@ -1,0 +1,22 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<OutputType>WinExe</OutputType>
+		<TargetFramework>net8.0-windows</TargetFramework>
+		<UseWPF>true</UseWPF>
+		<UseWindowsForms>true</UseWindowsForms>
+
+		<!-- Single EXE publish -->
+		<PublishSingleFile>true</PublishSingleFile>
+		<!-- REMOVE OR DISABLE TRIMMING FOR WINFORMS -->
+		<PublishTrimmed>false</PublishTrimmed>
+		<RuntimeIdentifier>win-x64</RuntimeIdentifier>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<Resource Include="Resources\app.ico" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="System.Drawing.Common" Version="9.0.6" />
+	</ItemGroup>
+</Project>
