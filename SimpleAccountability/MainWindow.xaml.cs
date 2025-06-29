@@ -1,17 +1,16 @@
-﻿using System;
+﻿#nullable enable
+using System;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
-using System.Timers;                    // unambiguous Timer
+using System.Timers;
 using System.Windows;
-using System.Windows.Forms;             // NotifyIcon
+using System.Windows.Forms;
+using System.Security.Cryptography;
 using Microsoft.Win32;
 using Application = System.Windows.Application;
 using Timer = System.Timers.Timer;
-
-using System.Diagnostics;
-using Microsoft.Win32;
-
+using WpfMessageBox = System.Windows.MessageBox;
 
 namespace SimpleAccountability
 {
@@ -20,55 +19,61 @@ namespace SimpleAccountability
         private readonly string _appDataDir;
         private readonly string _configPath;
         private readonly string _screensDir;
+        private readonly string _pendingDir;
 
         private AppSettings _settings;
         private Timer? _timer;
         private NotifyIcon? _trayIcon;
         private ContextMenuStrip? _trayMenu;
+        private readonly Random _rng = new();
 
         public MainWindow()
         {
             InitializeComponent();
 
-            // 1) Set up folders
             _appDataDir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                Environment.GetFolderPath(
+                    Environment.SpecialFolder.ApplicationData),
                 "SimpleAccountability");
             _configPath = Path.Combine(_appDataDir, "settings.json");
             _screensDir = Path.Combine(_appDataDir, "Screenshots");
+            _pendingDir = Path.Combine(_screensDir, "Pending");
+
             Directory.CreateDirectory(_appDataDir);
             Directory.CreateDirectory(_screensDir);
+            Directory.CreateDirectory(_pendingDir);
 
-            // 2) Load settings
             _settings = AppSettings.Load(_configPath);
 
-            // 3) Prefill UI
-            txtEmail.Text = _settings.SmtpUsername;
-            txtToEmail.Text = _settings.DestinationEmail;
-            txtFrequency.Text = _settings.FrequencyMinutes.ToString();
+            // Only show UI if not fully configured
+            bool needSetup =
+                !_settings.IsActive ||
+                string.IsNullOrWhiteSpace(_settings.SmtpUsername) ||
+                string.IsNullOrWhiteSpace(_settings.SmtpPassword) ||
+                string.IsNullOrWhiteSpace(_settings.DestinationEmail);
 
-            // 4) Build tray (even if hidden now)
-            BuildTrayIcon();
-
-            // 5) If first‑run (no config file) or not yet active, show UI
-            if (!_settings.IsActive)
+            if (needSetup)
             {
+                // Prefill UI fields
+                txtEmail.Text = _settings.SmtpUsername;
+                txtToEmail.Text = _settings.DestinationEmail;
+                txtFrequency.Text = _settings.FrequencyMinutes.ToString();
+                BuildTrayIcon();
                 ShowSettings();
             }
             else
             {
-                // Auto‑start monitoring
+                BuildTrayIcon();
                 ActivateMonitoring();
                 Hide();
             }
 
-            // 6) Send startup ACK & cleanup last month
             EmailSender.SendAck(_settings);
             CleanupLastMonth();
         }
+
         private void RegisterAutoStart()
         {
-            // Grab the real on‑disk EXE
             string exePath = Process.GetCurrentProcess().MainModule!.FileName;
             string quoted = $"\"{exePath}\"";
 
@@ -76,31 +81,24 @@ namespace SimpleAccountability
                 @"Software\Microsoft\Windows\CurrentVersion\Run", writable: true);
             key!.SetValue("SimpleAccountability", quoted);
         }
+
         private void StartMonitoring_Click(object sender, RoutedEventArgs e)
         {
             // Save UI inputs
             _settings.SmtpUsername = txtEmail.Text.Trim();
             _settings.SmtpPassword = txtPassword.Password;
             _settings.DestinationEmail = txtToEmail.Text.Trim();
-            if (!int.TryParse(txtFrequency.Text, out int f) || f <= 0) f = 10;
+            if (!int.TryParse(txtFrequency.Text, out int f) || f <= 0)
+                f = _settings.FrequencyMinutes > 0 ? _settings.FrequencyMinutes : 10;
             _settings.FrequencyMinutes = f;
 
-            // Mark active and persist
             _settings.IsActive = true;
             _settings.Save(_configPath);
 
-            // Add AutoStart if not already set
             RegisterAutoStart();
-
-            //// Register autostart if not already
-            //Registry.SetValue(
-            //    @"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run",
-            //    "SimpleAccountability",
-            //    System.Reflection.Assembly.GetExecutingAssembly().Location);
-
-            // Activate & alert
             ActivateMonitoring();
-            System.Windows.MessageBox.Show(
+
+            WpfMessageBox.Show(
                 "Monitoring is now running in the background.",
                 "App Started",
                 MessageBoxButton.OK,
@@ -111,7 +109,6 @@ namespace SimpleAccountability
 
         private void BuildTrayIcon()
         {
-            // Load embedded icon
             var iconUri = new Uri(
                 "pack://application:,,,/SimpleAccountability;component/Resources/app.ico");
             using var iconStream = Application.GetResourceStream(iconUri)!.Stream;
@@ -125,17 +122,16 @@ namespace SimpleAccountability
             };
 
             _trayMenu = new ContextMenuStrip();
-            _trayMenu.Items.Add("Settings…", null, (s, e) => ShowSettings());
-            _trayMenu.Items.Add("Activate", null, (s, e) => ActivateMonitoring());
-            _trayMenu.Items.Add("Deactivate", null, (s, e) => DeactivateMonitoring());
-            _trayMenu.Items.Add("Exit", null, (s, e) => ExitApplication());
+            _trayMenu.Items.Add("Settings…", null, (_, __) => ShowSettings());
+            _trayMenu.Items.Add("Activate", null, (_, __) => ActivateMonitoring());
+            _trayMenu.Items.Add("Deactivate", null, (_, __) => DeactivateMonitoring());
+            _trayMenu.Items.Add("Exit", null, (_, __) => ExitApplication());
 
-            // Disable Activate if already active
             _trayMenu.Items[1].Enabled = !_settings.IsActive;
             _trayMenu.Items[2].Enabled = _settings.IsActive;
 
             _trayIcon.ContextMenuStrip = _trayMenu;
-            _trayIcon.DoubleClick += (s, e) => ShowSettings();
+            _trayIcon.DoubleClick += (_, __) => ShowSettings();
         }
 
         private void ShowSettings()
@@ -148,13 +144,13 @@ namespace SimpleAccountability
         private void ActivateMonitoring()
         {
             EmailSender.SendActivation(_settings);
-            StartTimer();
+            ScheduleNextScreenshot();
 
             _settings.IsActive = true;
             _settings.Save(_configPath);
 
-            _trayMenu!.Items[1].Enabled = false; // Activate
-            _trayMenu.Items[2].Enabled = true;  // Deactivate
+            _trayMenu!.Items[1].Enabled = false;
+            _trayMenu.Items[2].Enabled = true;
         }
 
         private void DeactivateMonitoring()
@@ -165,47 +161,92 @@ namespace SimpleAccountability
             _settings.IsActive = false;
             _settings.Save(_configPath);
 
-            _trayMenu!.Items[1].Enabled = true;  // Activate
-            _trayMenu.Items[2].Enabled = false; // Deactivate
+            _trayMenu!.Items[1].Enabled = true;
+            _trayMenu.Items[2].Enabled = false;
         }
 
-        private void StartTimer()
+        private void ScheduleNextScreenshot()
         {
             _timer?.Stop();
-            double intervalMs = _settings.FrequencyMinutes * 60_000;
-            _timer = new Timer(intervalMs);
+
+            // Random interval between 0 and 2×FrequencyMinutes (in milliseconds)
+            int maxMs = _settings.FrequencyMinutes * 10 * 60_000;
+            int delayMs = _rng.Next(0, maxMs);
+            _timer = new Timer(delayMs) { AutoReset = false };
             _timer.Elapsed += Timer_Elapsed;
-            _timer.AutoReset = true;
             _timer.Start();
         }
 
         private async void Timer_Elapsed(object? sender, ElapsedEventArgs e)
         {
-            var rnd = new Random();
-            await System.Threading.Tasks.Task.Delay(
-                rnd.Next(_settings.FrequencyMinutes * 60_000));
+            // First, replay any pending screenshots
+            ProcessPendingScreenshots();
 
             try
             {
+                // Capture & send the new one
                 var bytes = ScreenshotHelper.CaptureScreenToBytes();
                 EmailSender.SendScreenshot(_settings, bytes);
 
-                // archive
+                // Archive locally
                 string monthFld = Path.Combine(
-                    _screensDir, DateTime.Now.ToString("yyyy‑MM"));
+                    _screensDir,
+                    DateTime.Now.ToString("yyyy-MM"));
                 Directory.CreateDirectory(monthFld);
                 File.WriteAllBytes(
                     Path.Combine(
                         monthFld,
-                        $"{DateTime.Now:yyyy‑MM‑dd_HH‑mm‑ss}.jpg"),
+                        $"{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.jpg"),
                     bytes);
             }
-            catch { /* ignore */ }
+            catch (System.Net.Mail.SmtpException)
+            {
+                // Offline or auth failure → queue encrypted
+                try
+                {
+                    var bytes = ScreenshotHelper.CaptureScreenToBytes();
+                    SavePending(bytes);
+                }
+                catch { /* swallow */ }
+            }
+            catch { /* swallow all others */ }
+
+            // Schedule the next shot at a new random delay
+            ScheduleNextScreenshot();
+        }
+
+        private void SavePending(byte[] raw)
+        {
+            var encrypted = ProtectedData.Protect(
+                raw, null, DataProtectionScope.CurrentUser);
+            string path = Path.Combine(
+                _pendingDir,
+                $"{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.dat");
+            File.WriteAllBytes(path, encrypted);
+        }
+
+        private void ProcessPendingScreenshots()
+        {
+            foreach (var file in Directory.GetFiles(_pendingDir, "*.dat"))
+            {
+                try
+                {
+                    var encrypted = File.ReadAllBytes(file);
+                    var decrypted = ProtectedData.Unprotect(
+                        encrypted, null, DataProtectionScope.CurrentUser);
+                    EmailSender.SendScreenshot(_settings, decrypted);
+                    File.Delete(file);
+                }
+                catch
+                {
+                    // Leave for next retry
+                }
+            }
         }
 
         private void CleanupLastMonth()
         {
-            string prev = DateTime.Now.AddMonths(-1).ToString("yyyy‑MM");
+            string prev = DateTime.Now.AddMonths(-1).ToString("yyyy-MM");
             var fld = Path.Combine(_screensDir, prev);
             if (Directory.Exists(fld))
                 Directory.Delete(fld, true);
@@ -223,10 +264,10 @@ namespace SimpleAccountability
             string msg =
 @"1. Go to https://myaccount.google.com/security
 2. Enable 2‑Step Verification
-3. Click 'App passwords'
+3. Click 'App passwords' at https://myaccount.google.com/apppasswords
 4. Create one for Mail → Other → ScreenshotMonitor
 5. Paste the 16‑character password here";
-            System.Windows.MessageBox.Show(
+            WpfMessageBox.Show(
                 msg,
                 "Gmail App Password Steps",
                 MessageBoxButton.OK,

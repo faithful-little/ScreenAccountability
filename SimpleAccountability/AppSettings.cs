@@ -8,15 +8,16 @@ namespace SimpleAccountability
 {
     public class AppSettings
     {
-        public int FrequencyMinutes { get; set; } = 10;
+        public int FrequencyMinutes { get; set; } = 100;
         public string DestinationEmail { get; set; } = "";
         public string SmtpUsername { get; set; } = "";
 
-        // Encrypted password backing field
         private string _encryptedPassword = "";
 
-        // Whether monitoring is active
         public bool IsActive { get; set; } = false;
+
+        // A stable per‑install Message-ID for threading
+        public string ThreadId { get; set; } = "";
 
         public string SmtpPassword
         {
@@ -39,18 +40,28 @@ namespace SimpleAccountability
 
         public void Save(string path)
         {
+            // Ensure ThreadId exists
+            if (string.IsNullOrWhiteSpace(ThreadId))
+                ThreadId = $"<thread-{Guid.NewGuid()}@simpleaccountability>";
+
             var opts = new JsonSerializerOptions { WriteIndented = true };
             File.WriteAllText(path, JsonSerializer.Serialize(this, opts));
         }
 
         public static AppSettings Load(string path)
         {
-            if (!File.Exists(path)) return new AppSettings();
+            if (!File.Exists(path))
+                return new AppSettings();
+
             try
             {
                 var json = File.ReadAllText(path);
-                return JsonSerializer.Deserialize<AppSettings>(json)
-                       ?? new AppSettings();
+                var s = JsonSerializer.Deserialize<AppSettings>(json)
+                           ?? new AppSettings();
+                // Guarantee a ThreadId
+                if (string.IsNullOrWhiteSpace(s.ThreadId))
+                    s.ThreadId = $"<thread-{Guid.NewGuid()}@simpleaccountability>";
+                return s;
             }
             catch
             {

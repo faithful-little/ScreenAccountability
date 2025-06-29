@@ -7,7 +7,6 @@
 
 		<!-- Single EXE publish -->
 		<PublishSingleFile>true</PublishSingleFile>
-		<!-- REMOVE OR DISABLE TRIMMING FOR WINFORMS -->
 		<PublishTrimmed>false</PublishTrimmed>
 		<RuntimeIdentifier>win-x64</RuntimeIdentifier>
 	</PropertyGroup>
