@@ -1,3 +1,4 @@
+```markdown
 # ScreenAccountability
 
 A Windows app that promotes digital accountability by automatically sending random screenshots to trusted accountability partners via email.
@@ -23,11 +24,18 @@ A Windows app that promotes digital accountability by automatically sending rand
 
 ## Setup
 
-1. **Email Configuration**
-   - Enter your Gmail address
-   - Grant email permissions (you may need to enable App Passwords)
+1. **Gmail App Password Configuration**
+   - Go to https://myaccount.google.com/security
+   - Enable 2-Step Verification
+   - Click 'App passwords' at https://myaccount.google.com/apppasswords
+   - Create one for Mail - Other - ScreenAccountability
+   - Copy the 16-character password
 
-2. **Add Accountability Partners**
+2. **Email Configuration**
+   - Enter your Gmail address in the app
+   - Paste the 16-character App Password when prompted
+
+3. **Add Accountability Partners**
    - Enter email addresses of trusted partners
    - They will receive your screenshots automatically
 
@@ -54,3 +62,7 @@ Report issues on [GitHub](https://github.com/faithful-little/ScreenAccountabilit
 ***
 
 **Disclaimer**: Use responsibly. Ensure you have consent from accountability partners and comply with privacy laws.
+```
+
+[1] https://myaccount.google.com/security
+[2] https://myaccount.google.com/apppasswords
