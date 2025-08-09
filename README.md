@@ -1,4 +1,4 @@
-```markdown
+
 # ScreenAccountability
 
 A Windows app that promotes digital accountability by automatically sending random screenshots to trusted accountability partners via email.
@@ -62,7 +62,7 @@ Report issues on [GitHub](https://github.com/faithful-little/ScreenAccountabilit
 ***
 
 **Disclaimer**: Use responsibly. Ensure you have consent from accountability partners and comply with privacy laws.
-```
+
 
 [1] https://myaccount.google.com/security
 [2] https://myaccount.google.com/apppasswords
